@@ -3,41 +3,41 @@
 using namespace std;
 class file
 {
-private:
-	FILE* fp;
+	private:
+		FILE* fp;
 
-public:
+	public:
 
-	file(const char* data,const char * mode="r")
-{
-	fp=fopen(data,mode);
-}
-	void getfilesize(int& filesize);
-	int read(void* buff, int size );
-	void free();
-	~file();
+		file(const char* data,const char * mode="r")
+		{
+			fp=fopen(data,mode);
+		}
+		void getfilesize(int& filesize);
+		int read(void* buff, int size );
+		void free();
+		~file();
 };
-	
-	void file::getfilesize(int& filesize)
+
+void file::getfilesize(int& filesize)
 {
 	fseek(fp,0,SEEK_END);
 	filesize=ftell(fp);
 	rewind(fp);
 }
-	int file::read(void* buff, int size )
+int file::read(void* buff, int size )
 {
 	fread(buff,1,size,fp);
 	rewind(fp);
 }
-	void file::free()
+void file::free()
 {
 	fclose(fp);
 }
-	file::~file()
+file::~file()
 {
 	cout<<fp<<endl;
 }
-	int main()
+int main()
 {	file a("data");
 	int c;
 	file d(a);
@@ -47,12 +47,12 @@ public:
 	d.read(e,sizeof(e)-1);
 	a.read(b,sizeof(b)-1);
 	d.free();
-cout<<b<<c<<'\n'<<e;
+	cout<<b<<c<<'\n'<<e;
 	int i,j,k;
 	i=1;
 	j=2;
 	k=3;
 	(i=j)=k;
-cout<<i<<j<<k<<endl;
+	cout<<i<<j<<k<<endl;
 	return 0;
 }
