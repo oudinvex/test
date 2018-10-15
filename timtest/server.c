@@ -31,7 +31,6 @@ struct sockaddr_in client_addr;
 
 Info SendBuf;
 Info RecvBuf;
-sqlite3 *ppdb = NULL;           // 数据库
 LinkList head = NULL;           // 在线用户
 int sockfd;         
 int ret;
@@ -41,14 +40,15 @@ int ret;
 void deal_reg(struct sockaddr_in temp_addr)                                     
 {  
     char sql[100] = {0};     
-
-    sprintf(sql, "insert into chatroom(username, account, passwd, likes, vip) values('%s','%s','%s','%d','%d')",RecvBuf.username, RecvBuf.account, RecvBuf.passwd, RecvBuf.likes, RecvBuf.vip);     
+	mysql_query(&mysql,"set names utf8");
+    sprintf(sql, "insert into user(username, account, passwd) values('%s','%s','%s')",RecvBuf.username, RecvBuf.account, RecvBuf.passwd);     
 
     char *errmsg = NULL;
-    ret = sqlite3_exec(ppdb, sql, NULL, NULL, &errmsg);  
-    if(ret != SQLITE_OK)  
+    if(mysql_query(&mysql,sql))  
     {  
-        perror("sqlite3_exec2");
+        fprintf(stderr,"fail to insert data to table list:error:%s\n",mysql_error(&mysql));
+	}
+	else
         SendBuf.result = EXISTING_ACC;
 
         ret = sendto(sockfd, &SendBuf, sizeof(SendBuf), 0, (struct sockaddr *)&temp_addr, sizeof(temp_addr));
@@ -76,8 +76,8 @@ void deal_reg(struct sockaddr_in temp_addr)
 void deal_log(struct sockaddr_in temp_addr)
 {
     char **Result = NULL;
-    int nRow;  行数
-    int nColumn;  列数
+    int nRow; // 行数
+    int nColumn; // 列数
     int ret;
     char sql[100] = {0};
 
@@ -117,117 +117,6 @@ void deal_log(struct sockaddr_in temp_addr)
             printf("malloc error!\n");
             return;
         }           
-        strcpy(p->account,RecvBuf.account);
-        strcpy(p->name, Result[5]); 
-        strcpy(SendBuf.username,Result[5]); 
-        SendBuf.vip = *(Result[8]) - 48;
-        SendBuf.likes = *(Result[7]) - 48;
-       strcpy(SendBuf.moto, Result[9]);  
-
-        p->client_addr.sin_family = temp_addr.sin_family;
-        p->client_addr.sin_port = temp_addr.sin_port;
-        p->client_addr.sin_addr.s_addr = temp_addr.sin_addr.s_addr;
-
-        printf("%s 上线!\n",Result[5]);   
-        printf("登入信息：用户名：%s \t 账号：%s \t 密码：%s \t 端口号:%d\n",SendBuf.username, p->account, RecvBuf.passwd, p->client_addr.sin_port);
-
-        p->next = head->next;
-        head->next = p;                 
-    }   
-
-    else
-    {
-        SendBuf.result = ERROR;
-    }
-
-    ret = sendto(sockfd, &SendBuf, sizeof(SendBuf), 0, (struct sockaddr *)&temp_addr, sizeof(temp_addr));
-    if (ret < 0)
-    {
-        perror("sendto_server_log");
-        exit(1);
-    }   
-}
-
- //私聊
-int deal_private(struct sockaddr_in temp_addr)
-{
-    int flag = 0;
-    LinkList tmp = head->next;
-    while(tmp != head)
-    {
-        if(!strcmp(tmp->name,RecvBuf.to_name))
-        {
-            flag = 1;
-            strcpy(SendBuf.msg, RecvBuf.msg);
-            strcpy(SendBuf.from_name,RecvBuf.username);
-
-            SendBuf.result = private_chat;
-
-            ret = sendto(sockfd, &SendBuf, sizeof(SendBuf), 0, (struct sockaddr *)&tmp->client_addr, sizeof(tmp->client_addr));
-            if(ret == -1)
-            {
-                perror("sendto_pchat");
-                exit(1);
-            }
-            break;
-        }
-        tmp=tmp->next;
-    }
-
-     if(flag)
-    {
-        SendBuf.result = SEND_SUCCESS;
-        ret = sendto(sockfd, &SendBuf, sizeof(SendBuf), 0, (struct sockaddr *)&temp_addr, sizeof(temp_addr));
-        if(ret == -1)
-        {
-            perror("sendto_success");
-            exit(1);
-        }       
-    }
-    else
-    {
-        SendBuf.result = SEND_FAILED;
-        ret = sendto(sockfd, &SendBuf, sizeof(SendBuf), 0, (struct sockaddr *)&temp_addr, sizeof(temp_addr));
-        if(ret == -1)
-        {
-            perror("sendto_failure");
-            exit(1);
-        }
-    }
-}   
-
- //群聊
-int deal_group(struct sockaddr_in temp_addr)
-{
-    int flag = 0;
-    LinkList tmp = head->next;
-
-    while (tmp != head)
-    {
-        if (tmp->client_addr.sin_port != temp_addr.sin_port)
-        {
-            flag = 1;
-
-            SendBuf.result = group_chat;
-
-
-            strcpy(SendBuf.from_name, RecvBuf.username);
-           printf("%s\n",SendBuf.from_name);
-            strcpy(SendBuf.msg, RecvBuf.msg);
-
-            ret = sendto(sockfd, &SendBuf, sizeof(SendBuf), 0, (struct sockaddr *)&tmp->client_addr, sizeof(tmp->client_addr));
-            if (ret < 0)
-            {
-                perror("sendto_group_chat");
-                exit(1);
-            }
-        }
-        tmp = tmp->next;
-    }
-    if (flag)
-    {
-        SendBuf.result = SEND_SUCCESS;
-        ret = sendto(sockfd, &SendBuf, sizeof(SendBuf), 0, (struct sockaddr *)&temp_addr, sizeof(temp_addr));
         if (ret < 0)
         {
             perror("sendto_group_chat_success");
@@ -459,8 +348,9 @@ int main()
     struct sockaddr_in client_addr;
     int length;
     int flag;
-    char sql[100] = {0};
-
+    char sql[100];
+    MSQL mysql;
+    mysql_init(&mysql);
     head = (LinkList)malloc(sizeof(Node));
     if (NULL == head)
     {
@@ -488,20 +378,12 @@ int main()
         exit(1);
     }
 
-    ret = sqlite3_open("chatroom.db", &ppdb);
-    if (ret != SQLITE_OK)
-    {
-        perror("sqlite3_open");
-        exit(1);
-    }
-
-    sprintf(sql, "create table if not exists chatroom (username text, account text primary key, passwd text ,likes integer, vip text, moto text);");
-    ret = sqlite3_exec(ppdb, sql, NULL, NULL, NULL);
-    if (ret != SQLITE_OK)
-    {
-        perror("sqlite3_exec1");
-        exit(1);
-    }
+ if(!mysql_real_connect(&mysql,"127.0.0.1","root","123456","chatdb",0,NULL,0))
+        {
+                fprintf(stderr, "Failed to connect to database: Error: %s\n",
+                                mysql_error(&mysql));
+                                return 0;
+        }
 
     while (1)
     {
@@ -518,17 +400,7 @@ int main()
 
         switch (RecvBuf.cmd)  
         {  
-            case (REG):                           //注册  
-            {   
-                deal_reg(client_addr);
-                break;
-            }
-
-            case (LOG):                          //登录
-            {
-                deal_log(client_addr);
-                break;
-            }
+            
 
             case (EXIT):                         //退出
             {
@@ -566,12 +438,6 @@ int main()
                 break;
             }   
 
-            case(Vip):                           //开通会员
-            {
-                deal_vip(client_addr);
-                break;
-            }
-
             case (file_transfer):                //文件传输
             {
                 deal_ftp(client_addr);
@@ -586,8 +452,128 @@ int main()
             }
         }           
     } 
-    sqlite3_close(ppdb);        
 
     return 0;
 
 }
+#include"udp_server.h"
+#include"udp_server.h"
+#define PORT 8888
+
+
+typedef struct info
+{
+    char username[20];               //用户名
+    char account[20];                //账号
+    char passwd[20];                 //密码
+    char from_name[20];              //发信人
+    char to_name[20];                //收信人
+    char online_name[20][20];        //在线人名
+    int  online_num;                 //在线人数
+    int  cmd;                        //提取操作符  
+    int  result;                     //返回操作结果 
+    char msg[1024];                  //发送、接收消息    
+    char e_s;                        //确认发送的表情
+    char p_s;                        //确认发送的常用语  
+    char file_name[50];              //文件名
+    char Ftp[2048];                  //文件传输
+}Info;
+
+typedef struct node
+{
+    struct sockaddr_in client_addr;
+    char name[20];
+    char account[20];
+    struct node *next;
+}Node, *LinkList;
+struct sockaddr_in client_addr;
+
+Info SendBuf;
+Info RecvBuf;
+LinkList head = NULL;           // 在线用户
+int sockfd;         
+int ret;
+
+
+
+ //私聊
+int deal_private(struct sockaddr_in temp_addr)
+{
+    int flag = 0;
+    LinkList tmp = head->next;
+    while(tmp != head)
+    {
+        if(!strcmp(tmp->name,RecvBuf.to_name))
+        {
+            flag = 1;
+            strcpy(SendBuf.msg, RecvBuf.msg);
+            strcpy(SendBuf.from_name,RecvBuf.username);
+
+            SendBuf.result = private_chat;
+
+            ret = sendto(sockfd, &SendBuf, sizeof(SendBuf), 0, (struct sockaddr *)&tmp->client_addr, sizeof(tmp->client_addr));
+            if(ret == -1)
+            {
+                perror("sendto_pchat");
+                exit(1);
+            }
+            break;
+        }
+        tmp=tmp->next;
+    }
+
+     if(flag)
+    {
+        SendBuf.result = SEND_SUCCESS;
+        ret = sendto(sockfd, &SendBuf, sizeof(SendBuf), 0, (struct sockaddr *)&temp_addr, sizeof(temp_addr));
+        if(ret == -1)
+        {
+            perror("sendto_success");
+            exit(1);
+        }       
+    }
+    else
+    {
+        SendBuf.result = SEND_FAILED;
+        ret = sendto(sockfd, &SendBuf, sizeof(SendBuf), 0, (struct sockaddr *)&temp_addr, sizeof(temp_addr));
+        if(ret == -1)
+        {
+            perror("sendto_failure");
+            exit(1);
+        }
+    }
+}   
+
+ //群聊
+int deal_group(struct sockaddr_in temp_addr)
+{
+    int flag = 0;
+    LinkList tmp = head->next;
+
+    while (tmp != head)
+    {
+        if (tmp->client_addr.sin_port != temp_addr.sin_port)
+        {
+            flag = 1;
+
+            SendBuf.result = group_chat;
+
+
+            strcpy(SendBuf.from_name, RecvBuf.username);
+           printf("%s\n",SendBuf.from_name);
+            strcpy(SendBuf.msg, RecvBuf.msg);
+
+            ret = sendto(sockfd, &SendBuf, sizeof(SendBuf), 0, (struct sockaddr *)&tmp->client_addr, sizeof(tmp->client_addr));
+            if (ret < 0)
+            {
+                perror("sendto_group_chat");
+                exit(1);
+            }
+        }
+        tmp = tmp->next;
+    }
+    if (flag)
+    {
+        SendBuf.result = SEND_SUCCESS;
+        ret = sendto(sockfd, &SendBuf, sizeof(SendBuf), 0, (struct sockaddr *)&temp_addr, sizeof(temp_addr));
+        if (ret < 0)
